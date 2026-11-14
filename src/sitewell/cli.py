@@ -68,8 +68,14 @@ def main(argv: list[str] | None = None) -> int:
                 f"Could not sign in to Google ({type(exc).__name__}). Check the network route to oauth2.googleapis.com."
             ) from exc
         if args.action == "sites":
-            for site in gsc.list_sites(session):
+            sites = gsc.list_sites(session)
+            for site in sites:
                 print(f"{site['permissionLevel']:<22} {site['siteUrl']}")
+            if not sites:
+                who = getattr(session.credentials, "service_account_email", None)
+                hint = f" Add {who} as a user on each property in Search Console." if who else ""
+                print(f"These credentials can see no Search Console property.{hint}")
+                return 3
         elif args.action == "fetch":
             start, end = gsc.history_window()
             start, end = args.start or start, args.end or end
