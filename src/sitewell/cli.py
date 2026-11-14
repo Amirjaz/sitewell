@@ -58,7 +58,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Signed in. Credentials saved to {path}")
             return 0
 
+        from google.auth.transport.requests import Request
+
         session = gsc.open_session()
+        try:
+            session.credentials.refresh(Request())
+        except Exception as exc:  # the token request itself failed: almost always the network
+            raise gsc.GscError(
+                f"Could not sign in to Google ({type(exc).__name__}). Check the network route to oauth2.googleapis.com."
+            ) from exc
         if args.action == "sites":
             for site in gsc.list_sites(session):
                 print(f"{site['permissionLevel']:<22} {site['siteUrl']}")

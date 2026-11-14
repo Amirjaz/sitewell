@@ -7,10 +7,11 @@ from sitewell import gsc, reach
 
 
 class FakeResponse:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, content_type="application/json"):
         self._payload, self.status_code = payload, status
         self.content = b"x"
         self.text = json.dumps(payload)
+        self.headers = {"content-type": content_type}
 
     def json(self):
         return self._payload
@@ -50,7 +51,7 @@ def test_query_asks_once_more_when_the_last_page_is_full():
 def test_property_is_encoded_in_the_path():
     session = FakeSession([])
     list(gsc.query(session, "https://example.com/", date(2026, 10, 1), date(2026, 10, 2), ["date"]))
-    assert session.urls[0].endswith("/sites/https%3A%2F%2Fexample.com%2F/searchAnalytics/query")
+    assert session.urls[0] == "https://searchconsole.googleapis.com/webmasters/v3/sites/https%3A%2F%2Fexample.com%2F/searchAnalytics/query"
 
 
 def test_history_window_ends_before_the_days_still_being_counted():
@@ -117,3 +118,18 @@ def test_probe_reports_each_url_twice_and_never_raises():
     assert failed[0]["status"] is None and "ConnectionError" in failed[0]["error"]
     assert not reach.all_ok(failed)
     assert "| failed |" in reach.as_markdown(failed)
+
+
+def test_a_html_403_is_reported_as_a_blocked_address():
+    with pytest.raises(gsc.GscError, match="front door"):
+        gsc._check(FakeResponse({}, status=403, content_type="text/html; charset=UTF-8"))
+
+
+def test_a_cut_connection_becomes_a_readable_error():
+    import requests
+
+    def boom(url, **kwargs):
+        raise requests.exceptions.ConnectionError("reset")
+
+    with pytest.raises(gsc.GscError, match="Could not reach searchconsole.googleapis.com"):
+        gsc._send(boom, f"{gsc.API}/sites")

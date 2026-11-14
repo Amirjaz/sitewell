@@ -22,7 +22,9 @@ from typing import Any, Iterable, Iterator
 from urllib.parse import quote
 
 SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
-API = "https://www.googleapis.com/webmasters/v3"
+# Google serves this API from two hosts. www.googleapis.com is cut off on some networks
+# (in Iran, for one) where this one still answers.
+API = "https://searchconsole.googleapis.com/webmasters/v3"
 INSPECT = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
 
 ROW_LIMIT = 25_000  # the most rows one Search Analytics request returns
@@ -97,7 +99,27 @@ def authorize(client_secrets: Path, out: Path) -> Path:
 # -------------------------------------------------------------------- calls ---
 
 
+def _send(method, url: str, **kwargs):
+    """One call, with connection failures turned into a GscError that says what to try."""
+    import requests
+
+    try:
+        return method(url, **kwargs)
+    except requests.exceptions.ConnectionError as exc:
+        host = url.split("/")[2]
+        raise GscError(
+            f"Could not reach {host}: the connection was cut off. On a network that blocks "
+            "Google's APIs, route googleapis.com through your VPN or set HTTPS_PROXY, "
+            "or run from a machine outside that network (a GitHub runner, for example)."
+        ) from exc
+
+
 def _check(response) -> dict[str, Any]:
+    if response.status_code == 403 and "text/html" in response.headers.get("content-type", ""):
+        raise GscError(
+            "HTTP 403 from Google's front door, not from the API: the request came from an address "
+            "Google refuses (a sanctioned country, for example). Use a VPN route or a machine elsewhere."
+        )
     if response.status_code >= 400:
         try:
             reason = response.json()["error"]["message"]
@@ -109,7 +131,7 @@ def _check(response) -> dict[str, Any]:
 
 def list_sites(session) -> list[dict[str, str]]:
     """Every property the credentials can see, with the permission level on each."""
-    data = _check(session.get(f"{API}/sites", timeout=60))
+    data = _check(_send(session.get, f"{API}/sites", timeout=60))
     return sorted(data.get("siteEntry", []), key=lambda s: s["siteUrl"])
 
 
@@ -148,7 +170,7 @@ def query(
             "rowLimit": row_limit,
             "startRow": start_row,
         }
-        rows = _check(session.post(url, json=body, timeout=120)).get("rows", [])
+        rows = _check(_send(session.post, url, json=body, timeout=120)).get("rows", [])
         for row in rows:
             flat = dict(zip(dims, row.get("keys", [])))
             flat.update({m: row.get(m, 0) for m in METRICS})
@@ -161,7 +183,7 @@ def query(
 def inspect(session, site: str, url: str, language: str = "en-US") -> dict[str, Any]:
     """What Google's index says about one URL of a property, flattened to the useful fields."""
     body = {"inspectionUrl": url, "siteUrl": site, "languageCode": language}
-    result = _check(session.post(INSPECT, json=body, timeout=120)).get("inspectionResult", {})
+    result = _check(_send(session.post, INSPECT, json=body, timeout=120)).get("inspectionResult", {})
     index = result.get("indexStatusResult", {})
     return {
         "url": url,
