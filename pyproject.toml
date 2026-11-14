@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sitewell"
+version = "0.0.1"
+description = "An SEO agent that looks after a site on a schedule: code measures, Claude decides, and only what the rules allow gets shipped."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Amirjaz" }]
+keywords = ["seo", "search-console", "agent", "claude", "github-actions"]
+dependencies = [
+  "google-auth>=2.30",
+  "google-auth-oauthlib>=1.2",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+sitewell = "sitewell.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Amirjaz/sitewell"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sitewell"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
