@@ -8,7 +8,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import __version__, gsc, reach
+from . import __version__, gsc, ledger, reach, runs, week
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -37,6 +37,30 @@ def _parser() -> argparse.ArgumentParser:
     r = commands.add_parser("reach", help="request URLs as a browser and as a crawler, and report what came back")
     r.add_argument("urls", nargs="+")
     r.add_argument("--json", type=Path, help="also write the rows to this file")
+
+    w = commands.add_parser("week", help="one site's weekly data run: fetch, detect, inventory, rivals, judgements")
+    w.add_argument("site", type=Path, help="the site's folder (holding site.toml)")
+    w.add_argument("--ops-root", type=Path, default=Path("."), help="where runs/ records go (default: here)")
+    w.add_argument("--as-of", type=date.fromisoformat, help="date that names the week folder (default: today)")
+    w.add_argument("--raw", type=Path, help="keep the raw Search Console bundle here instead of a temporary folder")
+    w.add_argument("--skip", default="", help="comma-separated: inventory, rivals")
+
+    wa = commands.add_parser("watch", help="exit 1 if any site has no recent successful weekly run")
+    wa.add_argument("--ops-root", type=Path, default=Path("."))
+    wa.add_argument("--max-age-days", type=float, default=8.0)
+
+    lg = commands.add_parser("ledger", help="the change ledger").add_subparsers(dest="action", required=True)
+    la = lg.add_parser("add", help="record a change that went live")
+    la.add_argument("site", type=Path)
+    la.add_argument("--id", required=True)
+    la.add_argument("--url", required=True)
+    la.add_argument("--kind", required=True, choices=ledger.KINDS)
+    la.add_argument("--shipped", required=True, type=date.fromisoformat)
+    la.add_argument("--summary", required=True)
+    la.add_argument("--before")
+    la.add_argument("--after")
+    la.add_argument("--ref")
+    la.add_argument("--source", default="sitewell", choices=["sitewell", "imported"])
     return parser
 
 
@@ -45,6 +69,31 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8")
     args = _parser().parse_args(argv)
     try:
+        if args.command == "week":
+            skip = {s.strip() for s in args.skip.split(",") if s.strip()}
+            return week.run(args.site, args.ops_root, args.as_of, args.raw, skip)
+
+        if args.command == "watch":
+            sites = sorted(p.parent.name for p in (args.ops_root / "sites").glob("*/site.toml"))
+            problems = runs.check(args.ops_root, sites, args.max_age_days)
+            for p in problems:
+                print(p)
+            if not problems:
+                print(f"All {len(sites)} sites have a recent successful weekly run.")
+            return 1 if problems else 0
+
+        if args.command == "ledger":
+            from .config import load_site
+
+            site = load_site(args.site)
+            change = ledger.Change(
+                id=args.id, site=site.name, url=args.url, kind=args.kind, shipped=args.shipped.isoformat(),
+                summary=args.summary, before=args.before, after=args.after, ref=args.ref, source=args.source,
+            )
+            ledger.add(site.folder / "ledger.jsonl", change)
+            print(f"Added {args.id} to {site.folder / 'ledger.jsonl'}")
+            return 0
+
         if args.command == "reach":
             rows = reach.probe_all(args.urls)
             if args.json:

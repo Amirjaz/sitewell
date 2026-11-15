@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sitewell"
-version = "0.0.1"
+version = "0.1.0.dev0"
 description = "An SEO agent that looks after a site on a schedule: code measures, Claude decides, and only what the rules allow gets shipped."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -15,6 +15,10 @@ dependencies = [
   "google-auth>=2.30",
   "google-auth-oauthlib>=1.2",
   "requests>=2.31",
+  "beautifulsoup4>=4.12",
+  # The detectors. Pinned to a commit until gsc-pulse publishes a release with the flat-table loader.
+  "gsc-pulse @ git+https://github.com/Amirjaz/gsc-pulse@1944b13147cf7b5e847199b5bb04fb06c82fe8a3",
+  "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]
@@ -31,3 +35,6 @@ packages = ["src/sitewell"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

@@ -206,6 +206,18 @@ PULLS = {
     "pages": ["date", "page"],
 }
 
+# The weekly bundle: everything the detectors read. The query-by-page table is large, so it
+# only covers the most recent weeks, which is all the cannibalisation and coverage checks use.
+# "Dates.csv" is named the way gsc-pulse expects a Search Console daily table.
+BUNDLE = {
+    "Dates": (["date"], None),
+    "queries": (["date", "query"], None),
+    "pages": (["date", "page"], None),
+    "countries": (["date", "country"], None),
+    "devices": (["date", "device"], None),
+    "query_pages": (["date", "query", "page"], 56),
+}
+
 
 def fetch_history(session, site: str, out: Path, start: date, end: date) -> dict[str, int]:
     """Write daily.csv, queries.csv and pages.csv for a property. Returns rows per file."""
@@ -224,3 +236,32 @@ def fetch_history(session, site: str, out: Path, start: date, end: date) -> dict
     meta = {"site": site, "start": start.isoformat(), "end": end.isoformat(), "rows": counts}
     (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return counts
+
+
+def fetch_bundle(session, site: str, out: Path, end: date, history_days: int = HISTORY_DAYS) -> dict[str, Any]:
+    """Write the weekly bundle for a property into `out`. Returns the window and rows per file."""
+    out.mkdir(parents=True, exist_ok=True)
+    start = end - timedelta(days=history_days - 1)
+    counts: dict[str, int] = {}
+    for name, (dims, days) in BUNDLE.items():
+        first = start if days is None else end - timedelta(days=days - 1)
+        path = out / f"{name}.csv"
+        n = 0
+        with path.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=[*dims, *METRICS])
+            writer.writeheader()
+            for row in query(session, site, first, end, dims):
+                writer.writerow(row)
+                n += 1
+        counts[name] = n
+    meta = {"site": site, "start": start.isoformat(), "end": end.isoformat(), "rows": counts}
+    (out / "meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    return meta
+
+
+def latest_complete_day(session, site: str, today: date | None = None) -> date:
+    """The newest day Search Console reports as final, looking back at most a week."""
+    today = today or date.today()
+    rows = list(query(session, site, today - timedelta(days=10), today, ["date"]))
+    days = sorted(date.fromisoformat(r["date"]) for r in rows if r.get("impressions"))
+    return days[-1] if days else today - timedelta(days=LAG_DAYS)
