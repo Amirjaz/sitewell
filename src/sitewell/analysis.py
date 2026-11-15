@@ -88,9 +88,11 @@ def prepare(raw: Path, work: Path, site: Site) -> dict[str, Any]:
     work.mkdir(parents=True, exist_ok=True)
     dropped: dict[str, Any] = {"rows": 0, "clicks": 0, "by_day": {}, "implausible": [], "before_start": 0}
     dates = raw / "Dates.csv"
-    if dates.exists():
-        dropped["implausible"] = implausible_days(dates)
     start = site.data_start or ""
+    if dates.exists():
+        found = implausible_days(dates)
+        dropped["implausible"] = [r for r in found if r["end"] >= start]
+        dropped["implausible_before_start"] = len(found) - len(dropped["implausible"])
     for src in sorted(raw.glob("*.csv")):
         dst = work / src.name
         with src.open(encoding="utf-8", newline="") as fin, dst.open("w", encoding="utf-8", newline="") as fout:
@@ -343,7 +345,7 @@ def build_facts(an, site: Site, meta: dict[str, Any], dropped: dict[str, Any], l
     return {
         "site": site.name,
         "property": site.property,
-        "data": {"start": meta["start"], "end": meta["end"], "rows": meta["rows"]},
+        "data": {"start": max(meta["start"], site.data_start or ""), "end": meta["end"], "fetched_from": meta["start"], "rows": meta["rows"]},
         "periods": plain({"current": an.periods.current, "previous": an.periods.previous}) if an.periods else None,
         "kpis": kpis,
         "brand_click_share": plain(an.ctx.brand_clicks_share),

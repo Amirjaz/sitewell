@@ -85,7 +85,8 @@ def summary_md(site: Site, facts: dict[str, Any] | None, inv: dict[str, Any] | N
     lines = [f"# {site.name}: week of data", ""]
     if facts:
         d = facts["data"]
-        lines.append(f"Search Console data {d['start']} to {d['end']}.")
+        cut = f" (earlier data ignored: data_start in site.toml)" if d.get("fetched_from") and d["start"] != d["fetched_from"] else ""
+        lines.append(f"Search Console data {d['start']} to {d['end']}{cut}.")
         k = facts.get("kpis")
         if k:
             p = facts["periods"]
