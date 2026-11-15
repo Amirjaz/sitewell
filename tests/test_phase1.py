@@ -207,6 +207,13 @@ def test_parse_page_reads_what_a_review_needs():
     assert info["words"] == 10  # nav and footer don't count
 
 
+def test_nested_page_chrome_is_removed_without_errors():
+    html = ('<html><body><header><nav><a href="/">خانه</a></nav></header><svg><script>x()</script></svg>'
+            '<main><h1>عنوان</h1><p>سه کلمه اینجا</p></main><footer><nav>پیوند</nav></footer></body></html>')
+    info = parse_page(html, "https://a.test/")
+    assert info["h1"] == ["عنوان"] and info["words"] == 4
+
+
 def test_sitemap_parsing_and_url_normalising():
     kind, rows = parse_sitemap('<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><sitemap><loc>https://a.test/post-sitemap.xml</loc></sitemap></sitemapindex>')
     assert kind == "index" and rows == [("https://a.test/post-sitemap.xml", None)]

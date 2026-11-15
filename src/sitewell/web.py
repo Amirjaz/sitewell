@@ -285,11 +285,14 @@ def parse_page(html: str, url: str) -> dict[str, Any]:
             external += 1
 
     images = soup.find_all("img")
+    # Removing a parent removes its children too; touching a removed child again raises.
     for tag in soup(["script", "style", "noscript", "template", "svg"]):
-        tag.decompose()
+        if not tag.decomposed:
+            tag.decompose()
     main = soup.find("main") or soup.find("article") or soup.body or soup
     for tag in main.find_all(["nav", "footer", "header", "aside"]):
-        tag.decompose()
+        if not tag.decomposed:
+            tag.decompose()
     words = len(WORD.findall(main.get_text(" ")))
 
     h1 = [_text(h) for h in soup.find_all("h1")]
