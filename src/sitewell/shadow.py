@@ -123,6 +123,9 @@ def run(site_dir: Path, ops_root: Path, today: date | None = None, runner: llm.R
         (ws / "rules.md").write_text("# Rules\n\nNo site rules written yet: follow the general principles only.\n", encoding="utf-8")
     shutil.copyfile(week_dir / "facts.json", ws / "facts.json")
     _copy(week_dir / "inventory.csv", ws / "inventory.csv")
+    _copy(week_dir / "links.json", ws / "links.json")
+    if not (ws / "links.json").exists():
+        (ws / "links.json").write_text("{}", encoding="utf-8")
     (ws / "guard.json").write_text(json.dumps(guard, ensure_ascii=False, indent=1), encoding="utf-8")
     (ws / "ledger.json").write_text(json.dumps([c.__dict__ for c in changes[-40:]], ensure_ascii=False, indent=1), encoding="utf-8")
     (ws / "previous.json").write_text(json.dumps(previous_proposals(site, week), ensure_ascii=False, indent=1), encoding="utf-8")
@@ -167,6 +170,8 @@ def run(site_dir: Path, ops_root: Path, today: date | None = None, runner: llm.R
 
 def _finish(site, ops_root, started, out, week, guard, decision, actions, drafts, checks, calls, steps, facts) -> int:
     for a in actions:
+        if a["id"] in drafts and guardrails.empty(drafts[a["id"]]):
+            a["empty_draft"] = True
         status, reasons = guardrails.final_status(a, checks.get("code", {}).get(a["id"]), checks.get("model", {}).get(a["id"]), a["id"] in drafts)
         a["final"], a["final_reasons"] = status, reasons
         if a["id"] in drafts:
@@ -207,7 +212,8 @@ def _clip(text: str, n: int) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
-STATUS_LABEL = {"auto": "would go live", "needs approval": "waits for you", "blocked": "blocked", "held": "held", "dropped": "dropped"}
+STATUS_LABEL = {"auto": "would go live", "needs approval": "waits for you", "for you": "for you to do", "no change needed": "no change needed",
+                "blocked": "blocked", "held": "held", "dropped": "dropped"}
 
 
 def report_md(site: Site, doc: dict[str, Any]) -> str:

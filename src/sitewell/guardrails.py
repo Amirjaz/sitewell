@@ -119,7 +119,7 @@ def after_drafts(actions: list[dict[str, Any]], drafts: list[dict[str, Any]], pa
         page_text = " ".join(b["text"] for b in pack.get("blocks", []))
         pairs = []  # (new text, the old text it replaces)
         if d.get("new_title"):
-            if a["type"] != "title":
+            if a["type"] not in ("title", "snippet"):
                 r["problems"].append(f"a new title in a {a['type']} action")
             pairs.append((d["new_title"], pack.get("title", "")))
             if len(d["new_title"]) > TITLE_MAX:
@@ -127,13 +127,15 @@ def after_drafts(actions: list[dict[str, Any]], drafts: list[dict[str, Any]], pa
         elif a["type"] == "title":
             r["problems"].append("a title action with no new title")
         if d.get("new_meta_description"):
-            if a["type"] != "description":
+            if a["type"] not in ("description", "snippet"):
                 r["problems"].append(f"a new description in a {a['type']} action")
             pairs.append((d["new_meta_description"], pack.get("description", "")))
             if not DESC_MIN <= len(d["new_meta_description"]) <= DESC_MAX:
                 r["warnings"].append(f"description is {len(d['new_meta_description'])} characters")
         elif a["type"] == "description":
             r["problems"].append("a description action with no new description")
+        if a["type"] == "snippet" and not (d.get("new_title") or d.get("new_meta_description")):
+            r["problems"].append("a snippet action with neither a new title nor a new description")
         added = 0
         for e in d.get("text_edits", []):
             old, new = _norm(e.get("before", "")), _norm(e.get("after", ""))
@@ -172,6 +174,13 @@ def after_drafts(actions: list[dict[str, Any]], drafts: list[dict[str, Any]], pa
 _NOT_A_FINDING = re.compile(r"^\s*(none|n/?a|no (breach|conflict|issue|problem)s?( found)?)\b", re.I)
 
 
+def empty(draft: dict[str, Any]) -> bool:
+    """A draft that changes nothing (the writer found the change already made)."""
+    art, hand = draft.get("article") or {}, draft.get("hand_task") or {}
+    return not any([draft.get("new_title"), draft.get("new_meta_description"), draft.get("links"), draft.get("schema_jsonld"),
+                    draft.get("text_edits"), art.get("body_markdown"), hand.get("steps")])
+
+
 def real(items: list[str] | None) -> list[str]:
     """A checker's list without the 'none' and 'no breach found' entries small models add."""
     return [i for i in (items or []) if i.strip() and not _NOT_A_FINDING.match(i)]
@@ -181,18 +190,20 @@ def final_status(action: dict[str, Any], code: dict[str, Any] | None, check: dic
     """auto | needs approval | blocked | held | dropped, with the reasons."""
     if action["status"] == "dropped":
         return "dropped", action["reasons"]
-    if not has_draft and action["type"] != "hand-task":
+    if not has_draft:
         return "blocked", ["no draft was written"]
+    if action["type"] == "hand-task":
+        return "for you", ["a person has to do this"]  # never held: a pause stops changes to the site, not chores
+    if action.get("empty_draft"):
+        return "no change needed", ["the writer found nothing to change"]
     reasons: list[str] = []
     code = code or {"problems": [], "approvals": [], "warnings": []}
     check = check or {}
-    never = real(check.get("breaks_never_rules"))
-    if code["problems"] or never:
-        return "blocked", code["problems"] + [f"rule: {c}" for c in never]
+    if code["problems"]:
+        return "blocked", code["problems"]
+    reasons += [f"the checker says it breaks a rule: {c}" for c in real(check.get("breaks_never_rules"))]
     if action["type"] in ("new-page", "technical"):
         reasons.append("new pages always wait for approval" if action["type"] == "new-page" else "code changes wait until the path check exists (Phase 4)")
-    if action["type"] == "hand-task":
-        reasons.append("a person has to do this")
     reasons += code["approvals"]
     reasons += [f"new medical claim: {c}" for c in real(check.get("new_medical_claims"))]
     reasons += [f"needs the doctor: {c}" for c in real(check.get("needs_doctor"))]

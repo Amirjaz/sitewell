@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-ACTION_TYPES = ["title", "description", "internal-link", "schema", "text-edit", "new-page", "technical", "hand-task"]
+ACTION_TYPES = ["snippet", "title", "description", "internal-link", "schema", "text-edit", "new-page", "technical", "hand-task"]
 
 _str = {"type": "string"}
 _strs = {"type": "array", "items": {"type": "string"}}

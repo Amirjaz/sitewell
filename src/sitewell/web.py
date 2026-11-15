@@ -274,13 +274,18 @@ def parse_page(html: str, url: str) -> dict[str, Any]:
 
     host = urlsplit(url).netloc.lower().removeprefix("www.")
     internal = external = 0
+    targets: list[str] = []
     for a in soup.find_all("a", href=True):
         href = a["href"].strip()
         if href.startswith(("#", "mailto:", "tel:", "javascript:")):
             continue
-        target = urlsplit(urljoin(url, href)).netloc.lower().removeprefix("www.")
+        full = urljoin(url, href)
+        target = urlsplit(full).netloc.lower().removeprefix("www.")
         if target == host:
             internal += 1
+            n = normalise_url(full.split("#")[0])
+            if n not in targets:
+                targets.append(n)
         elif target:
             external += 1
 
@@ -317,6 +322,7 @@ def parse_page(html: str, url: str) -> dict[str, Any]:
         "modified": head_meta.get("article:modified_time") or dates.get("dateModified"),
         "published": head_meta.get("article:published_time") or dates.get("datePublished"),
         "internal_links": internal,
+        "internal_targets": targets[:250],
         "external_links": external,
         "images": image_count,
         "images_without_alt": images_without_alt,

@@ -244,6 +244,8 @@ def run(site_dir: Path, ops_root: Path, as_of: date | None = None, raw_dir: Path
     (out / "facts.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
     if inv:
         inventory.write_csv(inv["pages"], out / "inventory.csv")
+        links = {r["url"]: r.get("internal_targets", []) for r in inv["pages"] if r.get("internal_targets") is not None}
+        (out / "links.json").write_text(json.dumps(links, ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "summary.md").write_text(summary_md(site, facts, inv, rival_reports, judged, steps, dom), encoding="utf-8")
 
     failed = set(steps.failed())

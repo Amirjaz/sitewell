@@ -80,6 +80,7 @@ def build(site: Site, fetcher: Fetcher, numbers: dict[str, dict[str, float]]) ->
                 internal_links=info["internal_links"],
                 images_without_alt=info["images_without_alt"],
                 modified=info["modified"],
+                internal_targets=info["internal_targets"],
             )
         rows.append(row)
 

@@ -249,3 +249,19 @@ def test_misplaced_fields_and_checker_noise():
     check = {"breaks_never_rules": ["No breach found. The message is fine."], "needs_doctor": ["medical wording in the description"], "new_medical_claims": ["None"]}
     status, reasons = guardrails.final_status(dict(acts[0], status="proposed"), {"problems": [], "approvals": [], "warnings": []}, check, True)
     assert (status, reasons) == ("needs approval", ["needs the doctor: medical wording in the description"])
+
+
+def test_snippets_empty_drafts_and_hand_tasks():
+    pack = {f"{SITE}/a": {"title": "t", "description": "d", "blocks": []}}
+    acts = [dict(action(1, "snippet", "/a"), status="held", reasons=["Google update"])]
+    r = guardrails.after_drafts(acts, [empty_draft("a1", new_title="عنوان تازه", new_meta_description="توضیح " * 20)], pack, {f"{SITE}/a"}, [], [])
+    assert r["a1"]["problems"] == []
+    assert guardrails.after_drafts(acts, [empty_draft("a1")], pack, {f"{SITE}/a"}, [], [])["a1"]["problems"] == ["a snippet action with neither a new title nor a new description"]
+    hand = dict(action(2, "hand-task", "", ""), status="held", reasons=["Google update"])
+    assert guardrails.final_status(hand, None, None, True) == ("for you", ["a person has to do this"])
+    nothing = dict(action(3, "internal-link", "/a"), status="held", reasons=["Google update"], empty_draft=True)
+    assert guardrails.final_status(nothing, None, None, True)[0] == "no change needed"
+    assert guardrails.empty(empty_draft("a3")) and not guardrails.empty(empty_draft("a3", new_title="x"))
+    flagged = dict(action(4, "description", "/a"), status="proposed", reasons=[])
+    status, reasons = guardrails.final_status(flagged, {"problems": [], "approvals": [], "warnings": []}, {"breaks_never_rules": ["claims a cause"]}, True)
+    assert status == "needs approval" and reasons == ["the checker says it breaks a rule: claims a cause"]
