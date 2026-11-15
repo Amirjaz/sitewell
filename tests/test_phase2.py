@@ -265,3 +265,10 @@ def test_snippets_empty_drafts_and_hand_tasks():
     flagged = dict(action(4, "description", "/a"), status="proposed", reasons=[])
     status, reasons = guardrails.final_status(flagged, {"problems": [], "approvals": [], "warnings": []}, {"breaks_never_rules": ["claims a cause"]}, True)
     assert status == "needs approval" and reasons == ["the checker says it breaks a rule: claims a cause"]
+
+
+def test_an_em_dash_in_new_text_is_blocked():
+    acts = [dict(action(1, "title", "/a"), status="proposed", reasons=[])]
+    pack = {f"{SITE}/a": {"title": "درمان الف | دکتر نمونه", "blocks": []}}
+    r = guardrails.after_drafts(acts, [empty_draft("a1", new_title="درمان الف — دکتر نمونه")], pack, {f"{SITE}/a"}, [], [])
+    assert r["a1"]["problems"] == ["uses a forbidden phrase: «—»"]

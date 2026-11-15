@@ -17,4 +17,6 @@ Write one draft per action, with its action_id. Fill only the fields that action
 - hand_task: who does it, numbered steps, minutes it takes.
 - notes: what you kept, and anything you could not do and why.
 
+Follow the separators and patterns the site's existing titles use. Never use an em dash.
+
 Never add a medical statement (a treatment, an outcome, a risk, a dose, a duration, a price) that the page does not already make, except in a new-page article, where each one is cited. Never use a word or claim rules.md forbids.

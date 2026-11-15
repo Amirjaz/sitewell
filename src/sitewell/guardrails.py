@@ -22,7 +22,7 @@ TITLE_MAX, DESC_MIN, DESC_MAX = 65, 70, 170
 LARGE_EDIT_CHARS = 1_200  # more new text than this on one page waits for a person
 
 # Applied to new text only (a phrase already on the page is not the writer's doing).
-FORBIDDEN = ["بهترین", "برترین", "تضمین", "صد درصد", "۱۰۰ درصد", "100 درصد", "۱۰۰٪", "100%", "معجزه"]
+FORBIDDEN = ["بهترین", "برترین", "تضمین", "صد درصد", "۱۰۰ درصد", "100 درصد", "۱۰۰٪", "100%", "معجزه", "—"]  # last: the em dash
 NEEDS_APPROVAL = ["قطعی", "درمان کامل", "قیمت", "هزینه", "تومان", "ریال", "عوارض ندارد", "بدون درد"]
 
 
