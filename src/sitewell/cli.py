@@ -8,7 +8,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from . import __version__, gsc, ledger, reach, runs, week
+from . import __version__, gsc, ledger, reach, runs, shadow, week
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -45,6 +45,10 @@ def _parser() -> argparse.ArgumentParser:
     w.add_argument("--raw", type=Path, help="keep the raw Search Console bundle here instead of a temporary folder")
     w.add_argument("--skip", default="", help="comma-separated: inventory, rivals")
 
+    sh = commands.add_parser("shadow", help="decide and write this week's actions without shipping anything")
+    sh.add_argument("site", type=Path)
+    sh.add_argument("--ops-root", type=Path, default=Path("."))
+
     wa = commands.add_parser("watch", help="exit 1 if any site has no recent successful weekly run")
     wa.add_argument("--ops-root", type=Path, default=Path("."))
     wa.add_argument("--max-age-days", type=float, default=8.0)
@@ -72,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "week":
             skip = {s.strip() for s in args.skip.split(",") if s.strip()}
             return week.run(args.site, args.ops_root, args.as_of, args.raw, skip)
+
+        if args.command == "shadow":
+            return shadow.run(args.site, args.ops_root)
 
         if args.command == "watch":
             sites = sorted(p.parent.name for p in (args.ops_root / "sites").glob("*/site.toml"))

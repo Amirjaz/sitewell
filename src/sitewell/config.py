@@ -38,6 +38,10 @@ class Site:
     # Search Console data before this ISO date is ignored: a relaunch, a takeover, a period of
     # fake traffic. Everything (baselines, detectors, history) starts here.
     data_start: str | None = None
+    # Extra phrases for this site, on top of sitewell's defaults: new text using a forbidden
+    # phrase is blocked; one using an approval phrase waits for a person.
+    forbidden_phrases: list[str] = field(default_factory=list)
+    approval_phrases: list[str] = field(default_factory=list)
     seo_plugin: str | None = None
     repo: str | None = None
     host: str | None = None

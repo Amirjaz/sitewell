@@ -321,3 +321,47 @@ def parse_page(html: str, url: str) -> dict[str, Any]:
         "images": image_count,
         "images_without_alt": images_without_alt,
     }
+
+
+def extract_content(html: str, url: str, max_chars: int = 14_000) -> dict[str, Any]:
+    """A page as the writer needs it: title, description, headings and text blocks in order,
+    internal links with their anchors, and the structured data as served."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    meta = {(m.get("name") or m.get("property") or "").lower(): (m.get("content") or "").strip() for m in soup.find_all("meta") if m.get("name") or m.get("property")}
+    jsonld = [s.string.strip() for s in soup.find_all("script", type="application/ld+json") if s.string]
+    for tag in soup(["script", "style", "noscript", "template", "svg"]):
+        if not tag.decomposed:
+            tag.decompose()
+    main = soup.find("main") or soup.find("article") or soup.body or soup
+    for tag in main.find_all(["nav", "footer", "header", "aside"]):
+        if not tag.decomposed:
+            tag.decompose()
+    host = urlsplit(url).netloc.lower().removeprefix("www.")
+    links = []
+    for a in main.find_all("a", href=True):
+        target = urljoin(url, a["href"].strip())
+        if urlsplit(target).netloc.lower().removeprefix("www.") == host:
+            links.append({"anchor": _text(a), "href": normalise_url(target)})
+    blocks, size = [], 0
+    for el in main.find_all(["h1", "h2", "h3", "h4", "p", "li", "td", "blockquote"]):
+        if el.find(["p", "li"]) is not None and el.name in ("li", "td", "blockquote"):
+            continue  # its children are listed on their own
+        text = _text(el)
+        if not text or (blocks and blocks[-1]["text"] == text):
+            continue
+        blocks.append({"tag": el.name, "text": text})
+        size += len(text)
+        if size > max_chars:
+            blocks.append({"tag": "note", "text": "(page text cut here for length)"})
+            break
+    return {
+        "url": normalise_url(url),
+        "title": _text(soup.title),
+        "description": meta.get("description", ""),
+        "canonical": normalise_url(urljoin(url, c["href"])) if (c := soup.find("link", rel=lambda v: v and "canonical" in (v if isinstance(v, list) else [v]))) and c.get("href") else None,
+        "blocks": blocks,
+        "internal_links": links[:150],
+        "jsonld": jsonld[:6],
+    }
