@@ -324,3 +324,48 @@ def test_the_weekly_run_writes_its_folder_and_a_record(bundle, site_dir, tmp_pat
     # Running the same week again is harmless: same folder, no second judgement.
     assert week.run(site_dir, ops, as_of=date(2026, 11, 14), skip={"inventory", "rivals"}, session=object()) == 0
     assert len(ledger.load(site_dir / "ledger.jsonl")[0].judged) == 1
+
+
+def test_data_start_and_implausible_click_through(bundle, site_dir, tmp_path):
+    raw, meta = bundle
+    toml = site_dir / "site.toml"
+    toml.write_text(toml.read_text(encoding="utf-8") + 'data_start = "2026-08-01"\n', encoding="utf-8")
+    site = load_site(site_dir)
+    dropped = analysis.prepare(raw, tmp_path / "w", site)
+    assert dropped["before_start"] == (date(2026, 8, 1) - (END - timedelta(days=DAYS - 1))).days
+    first = next(csv.DictReader((tmp_path / "w" / "Dates.csv").open(encoding="utf-8")))["date"]
+    assert first == "2026-08-01"
+    # The burst days run at 258 clicks on 2400 impressions: busy, but not implausible.
+    assert dropped["implausible"] == []
+    fake = tmp_path / "fake.csv"
+    write(fake, ["date", "clicks", "impressions"], [{"date": f"2026-01-{d:02d}", "clicks": 90, "impressions": 95} for d in range(10, 15)])
+    runs_ = analysis.implausible_days(fake)
+    assert runs_ == [{"start": "2026-01-10", "end": "2026-01-14", "clicks": 450, "impressions": 475, "ctr": 0.95}]
+
+
+def test_live_update_feed_is_parsed_and_wins():
+    from sitewell import updates
+
+    entries = updates.parse([
+        {"service_name": "Ranking", "begin": "2026-11-10T18:06:00+00:00", "end": None, "external_desc": "November 2026 core update"},
+        {"service_name": "Crawling", "begin": "2026-11-01T00:00:00+00:00", "end": None, "external_desc": "Crawl issue"},
+    ])
+    assert entries == [{"name": "November 2026 core update", "kind": "core", "start": date(2026, 11, 10), "end": None}]
+
+
+def test_a_rival_without_a_sitemap_is_listed_from_its_home_page():
+    pages = {"https://nositemap.test/": '<a href="/a">a</a><a href="https://nositemap.test/b#x">b</a><a href="https://elsewhere.test/">c</a>'}
+    snap, report = rivals.scan(FakeFetcher(pages), "nositemap.test", None)
+    assert report["list_from"] == "home-page links"
+    assert set(snap["urls"]) == {"https://nositemap.test/a", "https://nositemap.test/b"}
+
+
+def test_a_rival_whose_robots_forbid_sitemaps_says_so():
+    class Blocked(FakeFetcher):
+        def get(self, url, check_robots=True):
+            if url.endswith(".xml"):
+                return Fetched(url, None, error="disallowed by robots.txt")
+            return super().get(url, check_robots)
+
+    snap, report = rivals.scan(Blocked({}), "blocked.test", None)
+    assert report["status"] == "blocked-by-robots"

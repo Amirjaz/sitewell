@@ -13,7 +13,6 @@ import csv
 import dataclasses
 import math
 import re
-import shutil
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -60,42 +59,76 @@ def _skip(value: Any) -> bool:
 # ----------------------------------------------------------------- preparation ---
 
 
+IMPLAUSIBLE_CTR = 0.5  # people don't click half of what they see; bots that search and click do
+IMPLAUSIBLE_MIN_CLICKS = 20
+
+
+def implausible_days(dates_csv: Path) -> list[dict[str, Any]]:
+    """Runs of days whose click-through rate no human audience produces."""
+    flagged = []
+    with dates_csv.open(encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            clicks, imp = float(row.get("clicks") or 0), float(row.get("impressions") or 0)
+            if clicks >= IMPLAUSIBLE_MIN_CLICKS and imp and clicks / imp >= IMPLAUSIBLE_CTR:
+                flagged.append((date.fromisoformat(row["date"]), clicks, imp))
+    runs: list[dict[str, Any]] = []
+    for day, clicks, imp in sorted(flagged):
+        if runs and (day - date.fromisoformat(runs[-1]["end"])).days <= 3:
+            runs[-1].update(end=day.isoformat(), clicks=runs[-1]["clicks"] + clicks, impressions=runs[-1]["impressions"] + imp)
+        else:
+            runs.append({"start": day.isoformat(), "end": day.isoformat(), "clicks": clicks, "impressions": imp})
+    for r in runs:
+        r["ctr"] = round(r["clicks"] / r["impressions"], 2)
+        r["clicks"], r["impressions"] = round(r["clicks"]), round(r["impressions"])
+    return runs
+
+
 def prepare(raw: Path, work: Path, site: Site) -> dict[str, Any]:
-    """Copy the bundle into `work`, dropping queries the site says to ignore."""
+    """Copy the bundle into `work`: cut everything before `data_start`, drop ignored queries."""
     work.mkdir(parents=True, exist_ok=True)
-    dropped: dict[str, Any] = {"rows": 0, "clicks": 0, "by_day": {}}
+    dropped: dict[str, Any] = {"rows": 0, "clicks": 0, "by_day": {}, "implausible": [], "before_start": 0}
+    dates = raw / "Dates.csv"
+    if dates.exists():
+        dropped["implausible"] = implausible_days(dates)
+    start = site.data_start or ""
     for src in sorted(raw.glob("*.csv")):
         dst = work / src.name
-        if site.ignore_query_patterns and src.stem in ("queries", "query_pages"):
-            with src.open(encoding="utf-8", newline="") as fin, dst.open("w", encoding="utf-8", newline="") as fout:
-                reader = csv.DictReader(fin)
-                writer = csv.DictWriter(fout, fieldnames=reader.fieldnames or [])
-                writer.writeheader()
-                for row in reader:
-                    if site.ignored(row.get("query", "")):
-                        if src.stem == "queries":
-                            clicks = float(row.get("clicks") or 0)
-                            dropped["rows"] += 1
-                            dropped["clicks"] += int(clicks)
-                            day = row.get("date", "")
-                            dropped["by_day"][day] = dropped["by_day"].get(day, 0.0) + clicks
-                        continue
-                    writer.writerow(row)
-        else:
-            shutil.copyfile(src, dst)
+        with src.open(encoding="utf-8", newline="") as fin, dst.open("w", encoding="utf-8", newline="") as fout:
+            reader = csv.DictReader(fin)
+            writer = csv.DictWriter(fout, fieldnames=reader.fieldnames or [])
+            writer.writeheader()
+            for row in reader:
+                if start and row.get("date", "") < start:
+                    if src.stem == "Dates":
+                        dropped["before_start"] += 1
+                    continue
+                if site.ignore_query_patterns and src.stem in ("queries", "query_pages") and site.ignored(row.get("query", "")):
+                    if src.stem == "queries":
+                        clicks = float(row.get("clicks") or 0)
+                        dropped["rows"] += 1
+                        dropped["clicks"] += int(clicks)
+                        day = row.get("date", "")
+                        dropped["by_day"][day] = dropped["by_day"].get(day, 0.0) + clicks
+                    continue
+                writer.writerow(row)
     return dropped
 
 
-def gsc_config(site: Site):
+def gsc_config(site: Site, live_updates: list[dict[str, Any]] | None = None):
     from gsc_pulse.config import Config
 
-    return Config(site_name=site.domain, brand_terms=list(site.brand_terms), brand_patterns=list(site.brand_patterns))
+    return Config(
+        site_name=site.domain,
+        brand_terms=list(site.brand_terms),
+        brand_patterns=list(site.brand_patterns),
+        updates=list(live_updates or []),  # same name as a built-in entry: the live one wins
+    )
 
 
-def run_detectors(work: Path, site: Site):
+def run_detectors(work: Path, site: Site, live_updates: list[dict[str, Any]] | None = None):
     from gsc_pulse.report import analyse
 
-    return analyse(work, gsc_config(site))
+    return analyse(work, gsc_config(site, live_updates))
 
 
 # ------------------------------------------------------------------ the facts ---
@@ -260,7 +293,20 @@ def _mover(m) -> dict[str, Any]:
     }
 
 
-def updates_view(an, end: date) -> dict[str, Any]:
+def brand_queries(an, end: date, days: int = 28) -> list[dict[str, Any]]:
+    """The brand queries behind the brand split, so the terms can be checked by eye."""
+    import pandas as pd
+
+    q = _flat(an.ds, ("date", "query"))
+    if q is None or not an.brand.active:
+        return []
+    part = q[pd.to_datetime(q["date"]) >= pd.Timestamp(end - timedelta(days=days - 1))]
+    part = part[an.brand.mask(part["query"])]
+    g = part.groupby("query")[["clicks", "impressions"]].sum().sort_values("clicks", ascending=False)
+    return [{"query": k, "clicks": round(float(r["clicks"])), "impressions": round(float(r["impressions"]))} for k, r in g.head(10).iterrows()]
+
+
+def updates_view(an, end: date, live_error: str | None = "not checked") -> dict[str, Any]:
     recent = []
     ongoing = []
     for u in an.updates:
@@ -272,11 +318,12 @@ def updates_view(an, end: date) -> dict[str, Any]:
     return {
         "ongoing": ongoing,
         "last_90_days": recent,
-        "source": "gsc-pulse's dated list of Google updates; refresh it before trusting 'ongoing'",
+        "source": "live: Google Search Status Dashboard" if live_error is None
+        else f"gsc-pulse's built-in list (live feed unavailable: {live_error})",
     }
 
 
-def build_facts(an, site: Site, meta: dict[str, Any], dropped: dict[str, Any]) -> dict[str, Any]:
+def build_facts(an, site: Site, meta: dict[str, Any], dropped: dict[str, Any], live_error: str | None = "not checked") -> dict[str, Any]:
     end = date.fromisoformat(meta["end"])
     k = an.kpis
     kpis = None
@@ -289,6 +336,8 @@ def build_facts(an, site: Site, meta: dict[str, Any], dropped: dict[str, Any]) -
             "click_change_without_bots": plain(k.adjusted_click_change) if k.adjusted else None,
         }
     notes = list(dict.fromkeys([*an.ds.notes, *an.ctx.notes]))
+    if dropped.get("before_start"):
+        notes.append(f"data before {site.data_start} ({dropped['before_start']} days) is ignored (data_start in site.toml)")
     if dropped.get("rows"):
         notes.append(f"{dropped['rows']} query rows ({dropped['clicks']} clicks) matched ignore_query_patterns and were left out")
     return {
@@ -298,10 +347,12 @@ def build_facts(an, site: Site, meta: dict[str, Any], dropped: dict[str, Any]) -
         "periods": plain({"current": an.periods.current, "previous": an.periods.previous}) if an.periods else None,
         "kpis": kpis,
         "brand_click_share": plain(an.ctx.brand_clicks_share),
+        "brand_queries": brand_queries(an, end),
+        "implausible_ctr_days": dropped.get("implausible", []),
         "baseline": baseline(an, dropped.get("by_day")),
         "bot_bursts": [_burst(b) for b in an.bots.bursts],
         "traffic_shifts": [_shift(s) for s in an.drops.shifts],
-        "google_updates": updates_view(an, end),
+        "google_updates": updates_view(an, end, live_error),
         "ctr_gaps": [plain(g) for g in an.gaps.items[:TOP]],
         "striking_distance": [plain(s) for s in an.striking.items[:TOP]],
         "cannibalisation": [plain(c) for c in an.cannibal.items[:TOP]],

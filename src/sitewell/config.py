@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 if sys.version_info >= (3, 11):
@@ -34,6 +35,9 @@ class Site:
     rivals: list[str] = field(default_factory=list)
     reach: list[str] = field(default_factory=lambda: ["/"])
     max_pages: int = 300
+    # Search Console data before this ISO date is ignored: a relaunch, a takeover, a period of
+    # fake traffic. Everything (baselines, detectors, history) starts here.
+    data_start: str | None = None
     seo_plugin: str | None = None
     repo: str | None = None
     host: str | None = None
@@ -68,4 +72,10 @@ def load_site(path: Path | str) -> Site:
         except re.error as exc:
             raise ConfigError(f"{file}: bad pattern {pattern!r}: {exc}") from exc
     rivals = [re.sub(r"^https?://", "", r).strip("/").lower() for r in data.get("rivals", [])]
+    if data.get("data_start"):
+        try:
+            date.fromisoformat(str(data["data_start"]))
+        except ValueError as exc:
+            raise ConfigError(f"{file}: data_start must be a date like 2026-03-01") from exc
+        data["data_start"] = str(data["data_start"])
     return Site(folder=file.parent, **{**data, "base_url": data["base_url"].rstrip("/"), "rivals": rivals})

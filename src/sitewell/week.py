@@ -13,15 +13,16 @@ import json
 import tempfile
 import time
 import traceback
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, analysis, gsc, inventory, ledger, rivals, runs
+from . import __version__, analysis, gsc, inventory, ledger, rivals, runs, updates
 from .config import Site, load_site
 from .web import Fetcher
 
 STEPS_THAT_MATTER = {"fetch search console", "detectors"}
+RECENT_DAYS = 120  # the summary shows shifts and bursts from this far back; facts.json keeps all
 
 
 def iso_week(d: date) -> str:
@@ -96,21 +97,32 @@ def summary_md(site: Site, facts: dict[str, Any] | None, inv: dict[str, Any] | N
                 "|---|---|---|---|",
                 f"| Clicks | {k['current']['clicks']:,.0f} | {k['previous']['clicks']:,.0f} | {_pct(k['change']['clicks'])} |",
                 f"| Impressions | {k['current']['impressions']:,.0f} | {k['previous']['impressions']:,.0f} | {_pct(k['change']['impressions'])} |",
-                f"| Average position | {k['current']['position'] or 0:.1f} | {k['previous']['position'] or 0:.1f} | {k['change']['position'] or 0:+.1f} |",
+                f"| Average position (lower is better) | {k['current']['position'] or 0:.1f} | {k['previous']['position'] or 0:.1f} | {k['change']['position'] or 0:+.1f} |",
             ]
             if k.get("click_change_without_bots") is not None:
                 lines.append(f"| Clicks without bot bursts | | | {_pct(k['click_change_without_bots'])} |")
         b = facts.get("baseline", {})
         if b.get("status") == "ok":
             lines += ["", f"Non-brand clicks per week, median of the last 8 weeks: **{b['nonbrand_median_last_8w']}** (the 8 before: {b['nonbrand_median_prior_8w']})."]
+        brands = facts.get("brand_queries") or []
+        if brands:
+            lines.append("Brand queries counted: " + ", ".join(f"{b['query']} ({b['clicks']})" for b in brands[:5]) + ".")
+        recent_cut = (date.fromisoformat(facts["data"]["end"]) - timedelta(days=RECENT_DAYS)).isoformat()
         for burst in facts["bot_bursts"]:
-            lines.append(f"- Bot burst {burst['start']} to {burst['end']}: {burst['excess']} extra clicks, {burst['verdict']}.")
-        for s in facts["traffic_shifts"]:
+            if burst["end"] >= recent_cut:
+                lines.append(f"- Bot burst {burst['start']} to {burst['end']}: {burst['excess']} extra clicks, {burst['verdict']}.")
+        recent = [s for s in facts["traffic_shifts"] if s["first_day"] >= recent_cut]
+        for s in recent:
             ups = ", ".join(s["google_updates"]) or "no Google update nearby"
             lines.append(f"- Traffic {s['direction']} from {s['first_day']}: {_pct(s['change'])} ({ups}).")
+        older = len(facts["traffic_shifts"]) - len(recent)
+        if older:
+            lines.append(f"- {older} earlier traffic shifts are in facts.json.")
+        for w in facts.get("implausible_ctr_days") or []:
+            lines.append(f"- Implausible click-through {w['start']} to {w['end']}: {w['clicks']} clicks from {w['impressions']} impressions ({w['ctr']:.0%}). Probably bots; consider data_start.")
         ongoing = facts["google_updates"]["ongoing"]
         if ongoing:
-            lines.append(f"- Google update still rolling out: {', '.join(u['name'] for u in ongoing)}.")
+            lines.append(f"- **Google update rolling out: {', '.join(u['name'] + ' (since ' + u['start'] + ')' for u in ongoing)}.** Changes pause until it ends.")
         ev = facts["new_page_evidence"].get("items", [])
         if ev:
             lines += ["", "## Demand with no page that answers it", "", "| Query | Impressions | Best page | Position |", "|---|---|---|---|"]
@@ -141,7 +153,9 @@ def summary_md(site: Site, facts: dict[str, Any] | None, inv: dict[str, Any] | N
                 for p in r.get("pages", [])[:5]:
                     lines.append(f"  - {p.get('change')}: {p.get('title') or p['url']} ({p.get('words', '?')} words)")
             elif r.get("status") == "first-look":
-                lines.append(f"- **{r['domain']}**: first look, {r['listed']} pages listed. Changes are reported from next week.")
+                lines.append(f"- **{r['domain']}**: first look, {r['listed']} pages listed from its {r.get('list_from', 'sitemap')}. Changes are reported from next week.")
+            elif r.get("status") == "blocked-by-robots":
+                lines.append(f"- **{r['domain']}**: its robots.txt does not allow reading the sitemap, so it is not watched. Pick another rival?")
             else:
                 lines.append(f"- **{r['domain']}**: {r.get('status')} ({'; '.join(r.get('errors', [])[:2])})")
     if judged:
@@ -171,11 +185,12 @@ def run(site_dir: Path, ops_root: Path, as_of: date | None = None, raw_dir: Path
     if end is not None:
         meta = steps.run("fetch search console", lambda: gsc.fetch_bundle(session, site.property, raw / "gsc", end))
     dropped: dict[str, Any] = {}
+    live, live_error = updates.fetch()
     if meta is not None:
         dropped = analysis.prepare(raw / "gsc", raw / "work", site)
-        an = steps.run("detectors", lambda: analysis.run_detectors(raw / "work", site))
+        an = steps.run("detectors", lambda: analysis.run_detectors(raw / "work", site, live))
     if an is not None:
-        facts = steps.run("facts", lambda: analysis.build_facts(an, site, meta, dropped))
+        facts = steps.run("facts", lambda: analysis.build_facts(an, site, meta, dropped, live_error))
         steps.run("history", lambda: update_history(site.folder / "history" / "monthly.csv", analysis.monthly(an, dropped.get("by_day"))))
 
     if "inventory" not in skip:

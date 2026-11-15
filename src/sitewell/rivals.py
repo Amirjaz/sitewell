@@ -11,8 +11,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 from .web import Fetcher, parse_page, read_sitemaps
+
+HOME_LINKS_LIMIT = 300
 
 PAGES_PER_RIVAL = 12
 FIRST_LOOK_PAGES = 8
@@ -43,15 +46,48 @@ def _describe(fetcher: Fetcher, url: str) -> dict[str, Any]:
     }
 
 
+def home_links(fetcher: Fetcher, base: str) -> tuple[dict[str, str | None], str | None]:
+    """Same-site links on the home page: the page list for a site with no readable sitemap."""
+    got = fetcher.get(base + "/")
+    if not got.ok:
+        return {}, got.error or f"home page answered {got.status}"
+    from bs4 import BeautifulSoup
+
+    host = urlsplit(got.final_url or base).netloc.lower().removeprefix("www.")
+    urls: dict[str, str | None] = {}
+    for a in BeautifulSoup(got.text, "html.parser").find_all("a", href=True):
+        url = urljoin(got.final_url or base, a["href"]).split("#")[0]
+        if urlsplit(url).netloc.lower().removeprefix("www.") == host and url.startswith("http"):
+            urls.setdefault(url, None)
+        if len(urls) >= HOME_LINKS_LIMIT:
+            break
+    return urls, None
+
+
+def _why(errors: list[str]) -> str:
+    if errors and all("robots.txt" in e for e in errors):
+        return "blocked-by-robots"
+    if errors and all(e.endswith(": 404") for e in errors):
+        return "no-sitemap"
+    return "unreachable" if errors else "no-sitemap"
+
+
 def scan(fetcher: Fetcher, domain: str, previous: dict[str, Any] | None) -> tuple[dict[str, Any], dict[str, Any]]:
     """Returns (new snapshot, this week's report)."""
     base = f"https://{domain}"
     sm = read_sitemaps(fetcher, base)
+    source = "sitemap"
+    if not sm.urls and _why(sm.errors) == "no-sitemap":
+        links, err = home_links(fetcher, base)
+        if links:
+            sm.urls, source = links, "home-page links"
+        elif err:
+            sm.errors.append(err)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
-    snapshot = {"domain": domain, "scanned": now, "sources": sm.sources, "urls": sm.urls}
-    report: dict[str, Any] = {"domain": domain, "listed": len(sm.urls), "errors": sm.errors}
+    snapshot = {"domain": domain, "scanned": now, "sources": sm.sources, "list_from": source, "urls": sm.urls}
+    report: dict[str, Any] = {"domain": domain, "listed": len(sm.urls), "list_from": source, "errors": sm.errors, "truncated": sm.truncated}
     if not sm.urls:
-        report["status"] = "unreachable" if sm.errors else "no-sitemap"
+        report["status"] = _why(sm.errors)
         if previous:  # keep last week's list so one bad week doesn't make everything "new" next time
             snapshot["urls"] = previous.get("urls", {})
             snapshot["kept_from"] = previous.get("scanned")
