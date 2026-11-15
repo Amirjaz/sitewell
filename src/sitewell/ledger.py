@@ -69,6 +69,36 @@ def add(path: Path, change: Change) -> None:
     save(changes, path)
 
 
+def import_file(path: Path, source: Path) -> tuple[int, list[str]]:
+    """Add the changes in a JSONL file to the ledger. Returns (added, problems). Existing ids are skipped."""
+    changes = load(path)
+    have = {c.id for c in changes}
+    added, problems = 0, []
+    for n, line in enumerate(source.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+            data.setdefault("judged", {})
+            c = Change(**data)
+            c.shipped_on  # a real date
+        except (ValueError, TypeError) as exc:
+            problems.append(f"line {n}: {exc}")
+            continue
+        if c.kind not in KINDS:
+            problems.append(f"line {n}: unknown kind {c.kind!r}")
+            continue
+        if c.id in have:
+            continue
+        c.url = normalise_url(c.url)
+        changes.append(c)
+        have.add(c.id)
+        added += 1
+    changes.sort(key=lambda c: (c.shipped, c.id))
+    save(changes, path)
+    return added, problems
+
+
 def _sums(frame, start: date, end: date) -> tuple[float, float, float | None]:
     import pandas as pd
 

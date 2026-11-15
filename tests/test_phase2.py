@@ -184,3 +184,18 @@ def test_the_schemas_accept_good_answers_and_name_what_is_wrong():
     assert schemas.validate(CHECKS, schemas.CHECKS) == []
     bad = schemas.validate({"week_summary": "x"}, schemas.DECISION)
     assert any("'pause' is a required property" in b for b in bad)
+
+
+def test_importing_old_changes_is_idempotent(tmp_path):
+    src = tmp_path / "import.jsonl"
+    rows = [
+        {"id": "imp-1", "site": "clinic", "url": "https://clinic.test/%D8%A7/", "kind": "title", "shipped": "2026-11-01", "summary": "t", "before": "a", "after": "b", "ref": None, "source": "imported", "judged": {}},
+        {"id": "imp-2", "site": "clinic", "url": "https://clinic.test/b", "kind": "banana", "shipped": "2026-11-02", "summary": "t", "before": None, "after": None, "ref": None, "source": "imported", "judged": {}},
+    ]
+    src.write_text("
+".join(json.dumps(r, ensure_ascii=False) for r in rows), encoding="utf-8")
+    path = tmp_path / "ledger.jsonl"
+    added, problems = ledger.import_file(path, src)
+    assert added == 1 and problems == ["line 2: unknown kind 'banana'"]
+    assert ledger.load(path)[0].url == "https://clinic.test/ا"
+    assert ledger.import_file(path, src)[0] == 0

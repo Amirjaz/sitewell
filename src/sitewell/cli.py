@@ -65,6 +65,9 @@ def _parser() -> argparse.ArgumentParser:
     la.add_argument("--after")
     la.add_argument("--ref")
     la.add_argument("--source", default="sitewell", choices=["sitewell", "imported"])
+    li = lg.add_parser("import", help="add changes from a JSONL file (one change per line)")
+    li.add_argument("site", type=Path)
+    li.add_argument("file", type=Path)
     return parser
 
 
@@ -93,6 +96,12 @@ def main(argv: list[str] | None = None) -> int:
             from .config import load_site
 
             site = load_site(args.site)
+            if args.action == "import":
+                added, problems = ledger.import_file(site.folder / "ledger.jsonl", args.file)
+                for p in problems:
+                    print(f"skipped {p}")
+                print(f"Added {added} changes to {site.folder / 'ledger.jsonl'}")
+                return 1 if problems else 0
             change = ledger.Change(
                 id=args.id, site=site.name, url=args.url, kind=args.kind, shipped=args.shipped.isoformat(),
                 summary=args.summary, before=args.before, after=args.after, ref=args.ref, source=args.source,
