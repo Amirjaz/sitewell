@@ -3,8 +3,8 @@
 An SEO agent that looks after a site on a schedule. Code measures, Claude decides, and
 only what the rules allow gets shipped.
 
-**Status: early.** This repository is at Phase 0, which proves the three things
-everything else depends on. Nothing here changes a site yet.
+**Status: early.** Phase 1, the data layer, runs weekly on two real sites. Nothing here
+changes a site yet: the parts that decide and write come next.
 
 ## The idea
 
@@ -52,6 +52,45 @@ sitewell reach https://example.com/ https://example.com/sitemap.xml
 
 Each URL is requested as a browser and with Googlebot's user agent, and the result is a
 table of status, time and size.
+
+## The weekly data run
+
+Each site is a folder with a `site.toml`:
+
+```toml
+name = "example"
+kind = "wordpress"                 # nextjs | wordpress | other
+property = "sc-domain:example.com" # the Search Console property
+base_url = "https://example.com"
+brand_terms = ["example clinic"]
+brand_patterns = ['^dr example(\s|$)']
+ignore_query_patterns = ['crossword$'] # queries that are never about the site
+rivals = ["rival-one.com", "rival-two.com"]
+data_start = "2026-03-01"          # optional: ignore earlier, unreliable data
+```
+
+```bash
+sitewell week sites/example --ops-root .
+```
+
+One run, safe to repeat:
+
+1. **Fetches about 16 months of Search Console data:** by day, query, page, country and
+   device.
+2. **Runs [gsc-pulse](https://github.com/Amirjaz/gsc-pulse)'s detectors:** bot-click bursts,
+   traffic shifts matched to Google updates (read live from the Search Status Dashboard),
+   click-through gaps, striking distance and cannibalisation.
+3. **Builds a weekly non-brand baseline** with bot bursts taken out.
+4. **Lists the evidence for new pages:** queries with real demand that no page on the site
+   answers well.
+5. **Reads every page in the sitemap** and joins it with its search numbers.
+6. **Reads each rival's sitemap** and reports what they published or changed since last week.
+7. **Judges past changes** in the ledger at 14 and 28 days, against the page's own numbers
+   and the whole site's move.
+
+It writes `weeks/<ISO week>/facts.json`, `summary.md` and `inventory.csv`. It also adds to
+`history/monthly.csv` and records itself in `runs/`. `sitewell watch` fails when a site has
+no successful weekly run in the last eight days, because schedulers miss runs.
 
 ## WordPress
 
