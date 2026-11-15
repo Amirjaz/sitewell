@@ -208,10 +208,11 @@ def test_parse_page_reads_what_a_review_needs():
 
 
 def test_nested_page_chrome_is_removed_without_errors():
-    html = ('<html><body><header><nav><a href="/">خانه</a></nav></header><svg><script>x()</script></svg>'
-            '<main><h1>عنوان</h1><p>سه کلمه اینجا</p></main><footer><nav>پیوند</nav></footer></body></html>')
+    html = ('<html><body><header><nav><a href="/"><img src="logo.png">خانه</a></nav></header><svg><script>x()</script></svg>'
+            '<main><h1>عنوان</h1><p>سه کلمه اینجا</p><img src="a.jpg" alt="الف"></main><footer><nav>پیوند</nav></footer></body></html>')
     info = parse_page(html, "https://a.test/")
     assert info["h1"] == ["عنوان"] and info["words"] == 4
+    assert info["images"] == 2 and info["images_without_alt"] == 1
 
 
 def test_sitemap_parsing_and_url_normalising():

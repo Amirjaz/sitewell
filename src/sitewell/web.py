@@ -285,6 +285,8 @@ def parse_page(html: str, url: str) -> dict[str, Any]:
             external += 1
 
     images = soup.find_all("img")
+    image_count = len(images)
+    images_without_alt = sum(1 for i in images if not (i.get("alt") or "").strip())
     # Removing a parent removes its children too; touching a removed child again raises.
     for tag in soup(["script", "style", "noscript", "template", "svg"]):
         if not tag.decomposed:
@@ -316,6 +318,6 @@ def parse_page(html: str, url: str) -> dict[str, Any]:
         "published": head_meta.get("article:published_time") or dates.get("datePublished"),
         "internal_links": internal,
         "external_links": external,
-        "images": len(images),
-        "images_without_alt": sum(1 for i in images if not (i.get("alt") or "").strip()),
+        "images": image_count,
+        "images_without_alt": images_without_alt,
     }
