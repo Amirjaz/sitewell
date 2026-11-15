@@ -118,14 +118,22 @@ def after_drafts(actions: list[dict[str, Any]], drafts: list[dict[str, Any]], pa
         pack = packs.get(a["url"]) or {}
         page_text = " ".join(b["text"] for b in pack.get("blocks", []))
         pairs = []  # (new text, the old text it replaces)
-        if d.get("title"):
-            pairs.append((d["title"], pack.get("title", "")))
-            if len(d["title"]) > TITLE_MAX:
-                r["warnings"].append(f"title is {len(d['title'])} characters")
-        if d.get("description"):
-            pairs.append((d["description"], pack.get("description", "")))
-            if not DESC_MIN <= len(d["description"]) <= DESC_MAX:
-                r["warnings"].append(f"description is {len(d['description'])} characters")
+        if d.get("new_title"):
+            if a["type"] != "title":
+                r["problems"].append(f"a new title in a {a['type']} action")
+            pairs.append((d["new_title"], pack.get("title", "")))
+            if len(d["new_title"]) > TITLE_MAX:
+                r["warnings"].append(f"title is {len(d['new_title'])} characters")
+        elif a["type"] == "title":
+            r["problems"].append("a title action with no new title")
+        if d.get("new_meta_description"):
+            if a["type"] != "description":
+                r["problems"].append(f"a new description in a {a['type']} action")
+            pairs.append((d["new_meta_description"], pack.get("description", "")))
+            if not DESC_MIN <= len(d["new_meta_description"]) <= DESC_MAX:
+                r["warnings"].append(f"description is {len(d['new_meta_description'])} characters")
+        elif a["type"] == "description":
+            r["problems"].append("a description action with no new description")
         added = 0
         for e in d.get("text_edits", []):
             old, new = _norm(e.get("before", "")), _norm(e.get("after", ""))
@@ -161,6 +169,14 @@ def after_drafts(actions: list[dict[str, Any]], drafts: list[dict[str, Any]], pa
     return results
 
 
+_NOT_A_FINDING = re.compile(r"^\s*(none|n/?a|no (breach|conflict|issue|problem)s?( found)?)\b", re.I)
+
+
+def real(items: list[str] | None) -> list[str]:
+    """A checker's list without the 'none' and 'no breach found' entries small models add."""
+    return [i for i in (items or []) if i.strip() and not _NOT_A_FINDING.match(i)]
+
+
 def final_status(action: dict[str, Any], code: dict[str, Any] | None, check: dict[str, Any] | None, has_draft: bool) -> tuple[str, list[str]]:
     """auto | needs approval | blocked | held | dropped, with the reasons."""
     if action["status"] == "dropped":
@@ -170,14 +186,16 @@ def final_status(action: dict[str, Any], code: dict[str, Any] | None, check: dic
     reasons: list[str] = []
     code = code or {"problems": [], "approvals": [], "warnings": []}
     check = check or {}
-    if code["problems"] or check.get("rule_conflicts"):
-        return "blocked", code["problems"] + [f"rule: {c}" for c in check.get("rule_conflicts", [])]
+    never = real(check.get("breaks_never_rules"))
+    if code["problems"] or never:
+        return "blocked", code["problems"] + [f"rule: {c}" for c in never]
     if action["type"] in ("new-page", "technical"):
         reasons.append("new pages always wait for approval" if action["type"] == "new-page" else "code changes wait until the path check exists (Phase 4)")
     if action["type"] == "hand-task":
         reasons.append("a person has to do this")
     reasons += code["approvals"]
-    reasons += [f"new medical claim: {c}" for c in check.get("new_medical_claims", [])]
+    reasons += [f"new medical claim: {c}" for c in real(check.get("new_medical_claims"))]
+    reasons += [f"needs the doctor: {c}" for c in real(check.get("needs_doctor"))]
     status = "needs approval" if reasons else "auto"
     if action["status"] == "held":
         return "held", action["reasons"] + ([f"then: {status}"] if status else [])

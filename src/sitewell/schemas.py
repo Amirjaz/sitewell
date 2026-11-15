@@ -77,11 +77,12 @@ DRAFTS: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["action_id", "title", "description", "links", "schema_jsonld", "text_edits", "article", "hand_task", "notes"],
+                "required": ["action_id", "summary", "new_title", "new_meta_description", "links", "schema_jsonld", "text_edits", "article", "hand_task", "notes"],
                 "properties": {
                     "action_id": _str,
-                    "title": _str,  # empty string when not part of this action
-                    "description": _str,
+                    "summary": {"type": "string", "description": "One short English line saying what this draft changes."},
+                    "new_title": {"type": "string", "description": "The page's new <title> text, exactly as it should be served. Empty unless the action changes the title."},
+                    "new_meta_description": {"type": "string", "description": "The page's new meta description text, exactly as it should be served. Empty unless the action changes the description."},
                     "links": {"type": "array", "items": _link},
                     "schema_jsonld": _str,
                     "text_edits": {"type": "array", "items": _edit},
@@ -117,13 +118,14 @@ CHECKS: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["action_id", "new_medical_claims", "language_issues", "overlaps", "rule_conflicts"],
+                "required": ["action_id", "new_medical_claims", "language_issues", "overlaps", "breaks_never_rules", "needs_doctor"],
                 "properties": {
                     "action_id": _str,
                     "new_medical_claims": _strs,
                     "language_issues": _strs,
                     "overlaps": _strs,
-                    "rule_conflicts": _strs,
+                    "breaks_never_rules": {"type": "array", "items": _str, "description": "Only real breaches of a rule under '## Never' in rules.md, each naming the rule. Empty when there are none."},
+                    "needs_doctor": {"type": "array", "items": _str, "description": "Things in the draft that rules.md lists under '## Needs the doctor'. Empty when there are none."},
                 },
             },
         }

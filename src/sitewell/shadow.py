@@ -236,10 +236,12 @@ def report_md(site: Site, doc: dict[str, Any]) -> str:
         L += [f"Why: {_clip(a['why'], 400)}", "", "Evidence: " + _clip("; ".join(a.get("evidence", [])), 400), "", f"Outcome: **{STATUS_LABEL.get(a['final'], a['final'])}**" + (f" ({_clip('; '.join(a['final_reasons']), 400)})" if a.get("final_reasons") else ""), ""]
         d = a.get("draft")
         if d:
-            if d.get("title"):
-                L.append(f"- New title: {d['title']}")
-            if d.get("description"):
-                L.append(f"- New description: {d['description']}")
+            if d.get("summary"):
+                L.append(f"- {d['summary']}")
+            if d.get("new_title"):
+                L.append(f"- New title: {d['new_title']}")
+            if d.get("new_meta_description"):
+                L.append(f"- New description: {d['new_meta_description']}")
             for link in d.get("links", []):
                 L.append(f"- Link to {re.sub(r'^https?://[^/]+', '', link['to_url']) or '/'}, anchor «{link['anchor']}»")
             for e in d.get("text_edits", []):
@@ -254,8 +256,8 @@ def report_md(site: Site, doc: dict[str, Any]) -> str:
             if ht.get("steps"):
                 L.append(f"- For {ht.get('who')}, about {ht.get('minutes')} minutes: " + " ".join(f"({i + 1}) {s}" for i, s in enumerate(ht["steps"])))
             mc = a.get("model_check") or {}
-            if mc.get("language_issues"):
-                L.append("- Language: " + "; ".join(_clip(x, 120) for x in mc["language_issues"][:3]))
+            if guardrails.real(mc.get("language_issues")):
+                L.append("- Language: " + "; ".join(_clip(x, 120) for x in guardrails.real(mc["language_issues"])[:3]))
             others = [o for o in mc.get("overlaps", []) if a["url"] not in o]
             if others:
                 L.append("- Overlaps: " + "; ".join(_clip(x, 120) for x in others[:3]))

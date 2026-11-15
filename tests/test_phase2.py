@@ -54,7 +54,7 @@ def action(i, type_, path, query="", **kw):
 
 
 def empty_draft(aid, **kw):
-    d = {"action_id": aid, "title": "", "description": "", "links": [], "schema_jsonld": "", "text_edits": [],
+    d = {"action_id": aid, "summary": "", "new_title": "", "new_meta_description": "", "links": [], "schema_jsonld": "", "text_edits": [],
          "article": {"slug": "", "title": "", "description": "", "h1": "", "body_markdown": "", "sources": []},
          "hand_task": {"who": "", "steps": [], "minutes": 0}, "notes": ""}
     d.update(kw)
@@ -79,18 +79,18 @@ DECISION = {
 
 DRAFTS = {
     "drafts": [
-        empty_draft("a1", title="درمان الف در تهران | نوبت دکتر نمونه"),
+        empty_draft("a1", new_title="درمان الف در تهران | نوبت دکتر نمونه"),
         empty_draft("a2", text_edits=[{"section": "علت", "before": "درمان الف برای بیماری ب انجام می‌شود.", "after": "درمان الف برای بیماری ب انجام می‌شود و دو هفته طول می‌کشد."}]),
         empty_draft("a3", article={"slug": "illness-c", "title": "علت بیماری ج", "description": "d", "h1": "علت بیماری ج", "body_markdown": "## علت\n\nمتن.", "sources": [{"title": "ref", "url": "https://ref.test"}]}),
-        empty_draft("a6", description="بهترین درمان الف در تهران با دکتر نمونه، همراه با توضیح کامل علت‌ها و راه‌های پیشگیری از بیماری"),
+        empty_draft("a6", new_meta_description="بهترین درمان الف در تهران با دکتر نمونه، همراه با توضیح کامل علت‌ها و راه‌های پیشگیری از بیماری"),
         empty_draft("a7", links=[{"from_url": f"{SITE}/a", "to_url": f"{SITE}/missing", "anchor": "x", "sentence": "x"}]),
     ]
 }
 
 CHECKS = {"checks": [
-    {"action_id": "a1", "new_medical_claims": [], "language_issues": [], "overlaps": [], "rule_conflicts": []},
-    {"action_id": "a2", "new_medical_claims": ["دو هفته طول می‌کشد"], "language_issues": [], "overlaps": [], "rule_conflicts": []},
-    {"action_id": "a3", "new_medical_claims": [], "language_issues": [], "overlaps": [], "rule_conflicts": []},
+    {"action_id": "a1", "new_medical_claims": [], "language_issues": [], "overlaps": [], "breaks_never_rules": [], "needs_doctor": []},
+    {"action_id": "a2", "new_medical_claims": ["دو هفته طول می‌کشد"], "language_issues": [], "overlaps": [], "breaks_never_rules": [], "needs_doctor": []},
+    {"action_id": "a3", "new_medical_claims": [], "language_issues": [], "overlaps": [], "breaks_never_rules": [], "needs_doctor": []},
 ]}
 
 
@@ -165,9 +165,9 @@ def test_budget_and_limits():
 def test_phrases_count_only_when_the_writer_added_them():
     acts = [dict(action(1, "title", "/a"), status="proposed", reasons=[])]
     pack = {f"{SITE}/a": {"title": "بهترین کلینیک", "description": "", "blocks": []}}
-    r = guardrails.after_drafts(acts, [empty_draft("a1", title="بهترین کلینیک تهران")], pack, {f"{SITE}/a"}, [], [])
+    r = guardrails.after_drafts(acts, [empty_draft("a1", new_title="بهترین کلینیک تهران")], pack, {f"{SITE}/a"}, [], [])
     assert r["a1"]["problems"] == []  # the old title already said it
-    r = guardrails.after_drafts(acts, [empty_draft("a1", title="هزینه درمان الف")], {f"{SITE}/a": {"title": "درمان الف", "blocks": []}}, {f"{SITE}/a"}, [], [])
+    r = guardrails.after_drafts(acts, [empty_draft("a1", new_title="هزینه درمان الف")], {f"{SITE}/a": {"title": "درمان الف", "blocks": []}}, {f"{SITE}/a"}, [], [])
     assert r["a1"]["approvals"] == ["new text says «هزینه»"]
 
 
@@ -236,3 +236,16 @@ def test_domain_expiry_from_rdap():
     assert health.domain("clinic.test", date(2026, 1, 1), session=S(doc))["status"] == "ok"
     assert health.domain("clinic.test", date(2026, 11, 15), session=S({"status": ["client hold"], "events": doc["events"]}))["status"] == "on hold"
     assert health.domain("clinic.test", date(2026, 11, 15), session=S({}, 404))["status"] == "unknown"
+
+
+def test_misplaced_fields_and_checker_noise():
+    acts = [dict(action(1, "internal-link", "/a"), status="proposed", reasons=[])]
+    pack = {f"{SITE}/a": {"title": "t", "description": "d", "blocks": []}}
+    r = guardrails.after_drafts(acts, [empty_draft("a1", new_title="یک برچسب، نه عنوان")], pack, {f"{SITE}/a"}, [], [])
+    assert r["a1"]["problems"] == ["a new title in a internal-link action"]
+    acts = [dict(action(1, "description", "/a"), status="proposed", reasons=[])]
+    r = guardrails.after_drafts(acts, [empty_draft("a1")], pack, {f"{SITE}/a"}, [], [])
+    assert r["a1"]["problems"] == ["a description action with no new description"]
+    check = {"breaks_never_rules": ["No breach found. The message is fine."], "needs_doctor": ["medical wording in the description"], "new_medical_claims": ["None"]}
+    status, reasons = guardrails.final_status(dict(acts[0], status="proposed"), {"problems": [], "approvals": [], "warnings": []}, check, True)
+    assert (status, reasons) == ("needs approval", ["needs the doctor: medical wording in the description"])
