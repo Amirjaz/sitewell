@@ -41,6 +41,9 @@ def before(site, facts: dict[str, Any], changes: list[Change], today: date, inve
     reasons = []
     for u in (sc.get("google_updates") or {}).get("ongoing", []):
         reasons.append(f"Google update rolling out: {u['name']} (since {u['start']})")
+    dom = (facts or {}).get("domain") or {}
+    if dom.get("status") in ("expired", "on hold"):
+        reasons.append(f"domain {dom['domain']} is {dom['status']}")
     broken = sum(1 for r in inventory_rows if str(r.get("status")) != "200" or str(r.get("noindex")) == "True")
     if last_inventory is not None and broken > last_inventory.get("broken", 0):
         reasons.append(f"pages failing or set to noindex went from {last_inventory['broken']} to {broken}")
@@ -53,6 +56,7 @@ def before(site, facts: dict[str, Any], changes: list[Change], today: date, inve
         "paused": bool(reasons),
         "pause_reasons": reasons,
         "broken_pages": broken,
+        "domain": dom or None,
         "limits": {"max_actions": MAX_ACTIONS, "max_hand_tasks": MAX_HAND_TASKS},
     }
 

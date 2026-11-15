@@ -17,7 +17,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
-from . import __version__, analysis, gsc, inventory, ledger, rivals, runs, updates
+from . import __version__, analysis, gsc, health, inventory, ledger, rivals, runs, updates
 from .config import Site, load_site
 from .web import Fetcher
 
@@ -81,8 +81,10 @@ def _pct(x: float | None) -> str:
     return "n/a" if x is None else f"{x * 100:+.1f}%"
 
 
-def summary_md(site: Site, facts: dict[str, Any] | None, inv: dict[str, Any] | None, rival_reports: list[dict[str, Any]], judged: list[dict[str, Any]], steps: Steps) -> str:
+def summary_md(site: Site, facts: dict[str, Any] | None, inv: dict[str, Any] | None, rival_reports: list[dict[str, Any]], judged: list[dict[str, Any]], steps: Steps, dom: dict[str, Any] | None = None) -> str:
     lines = [f"# {site.name}: week of data", ""]
+    if dom and dom.get("status") in ("renew soon", "expired", "on hold"):
+        lines += [f"**Domain {dom['domain']}: {dom['status']}** (expires {dom.get('expires')}, {dom.get('days_left')} days left). Renew it before anything else.", ""]
     if facts:
         d = facts["data"]
         cut = f" (earlier data ignored: data_start in site.toml)" if d.get("fetched_from") and d["start"] != d["fetched_from"] else ""
@@ -194,6 +196,8 @@ def run(site_dir: Path, ops_root: Path, as_of: date | None = None, raw_dir: Path
         facts = steps.run("facts", lambda: analysis.build_facts(an, site, meta, dropped, live_error))
         steps.run("history", lambda: update_history(site.folder / "history" / "monthly.csv", analysis.monthly(an, dropped.get("by_day"))))
 
+    dom = steps.run("domain expiry", lambda: health.domain(site.domain, (as_of or started.date())))
+
     if "inventory" not in skip:
         numbers = inventory.page_numbers(an, end) if an is not None and end else {}
         own = Fetcher(own_hosts={site.domain})
@@ -232,6 +236,7 @@ def run(site_dir: Path, ops_root: Path, as_of: date | None = None, raw_dir: Path
         "week": week,
         "generated": runs.now().isoformat(timespec="seconds"),
         "search_console": facts,
+        "domain": dom,
         "inventory": {k: v for k, v in inv.items() if k != "pages"} if inv else None,
         "rivals": rival_reports,
         "judged_changes": judged,
@@ -239,7 +244,7 @@ def run(site_dir: Path, ops_root: Path, as_of: date | None = None, raw_dir: Path
     (out / "facts.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
     if inv:
         inventory.write_csv(inv["pages"], out / "inventory.csv")
-    (out / "summary.md").write_text(summary_md(site, facts, inv, rival_reports, judged, steps), encoding="utf-8")
+    (out / "summary.md").write_text(summary_md(site, facts, inv, rival_reports, judged, steps, dom), encoding="utf-8")
 
     failed = set(steps.failed())
     status = "failed" if failed & STEPS_THAT_MATTER or meta is None else ("partial" if failed else "ok")

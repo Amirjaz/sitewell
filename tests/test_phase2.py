@@ -210,3 +210,29 @@ def test_rewording_existing_text_and_large_additions_wait_for_a_person():
     assert guardrails.after_drafts(acts, [extend], pack, {f"{SITE}/a"}, [], [])["a1"]["approvals"] == []
     big = empty_draft("a1", text_edits=[{"section": "s", "before": "", "after": "متن " * 400}])
     assert guardrails.after_drafts(acts, [big], pack, {f"{SITE}/a"}, [], [])["a1"]["approvals"][0].startswith("large edit")
+
+
+def test_domain_expiry_from_rdap():
+    from sitewell import health
+
+    class R:
+        def __init__(self, doc, code=200):
+            self.doc, self.status_code = doc, code
+
+        def json(self):
+            return self.doc
+
+    class S:
+        def __init__(self, doc, code=200):
+            self.r = R(doc, code)
+
+        def get(self, url, timeout, headers):
+            assert url == "https://rdap.org/domain/clinic.test"
+            return self.r
+
+    doc = {"status": ["client transfer prohibited"], "events": [{"eventAction": "expiration", "eventDate": "2026-12-13T13:31:27Z"}]}
+    d = health.domain("www.clinic.test", date(2026, 11, 15), session=S(doc))
+    assert (d["status"], d["days_left"], d["expires"]) == ("renew soon", 28, "2026-12-13")
+    assert health.domain("clinic.test", date(2026, 1, 1), session=S(doc))["status"] == "ok"
+    assert health.domain("clinic.test", date(2026, 11, 15), session=S({"status": ["client hold"], "events": doc["events"]}))["status"] == "on hold"
+    assert health.domain("clinic.test", date(2026, 11, 15), session=S({}, 404))["status"] == "unknown"

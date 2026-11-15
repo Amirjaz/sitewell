@@ -215,6 +215,9 @@ def report_md(site: Site, doc: dict[str, Any]) -> str:
     L = [f"## {site.domain}: shadow week {doc['week']}", ""]
     if doc.get("week_summary"):
         L += [doc["week_summary"], ""]
+    dom = g.get("domain") or {}
+    if dom.get("status") in ("renew soon", "expired", "on hold"):
+        L += [f"**Domain {dom['domain']}: {dom['status']}**, expires {dom.get('expires')} ({dom.get('days_left')} days). Renew it.", ""]
     if g["paused"]:
         L += ["**Changes are paused:** " + "; ".join(g["pause_reasons"]) + ". The actions below are what sitewell would do once the pause ends.", ""]
     acts = doc["actions"]
