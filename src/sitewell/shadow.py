@@ -202,6 +202,11 @@ def _finish(site, ops_root, started, out, week, guard, decision, actions, drafts
     return 1 if status == "failed" else 0
 
 
+def _clip(text: str, n: int) -> str:
+    text = re.sub(r"\s+", " ", text or "").strip()
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
 STATUS_LABEL = {"auto": "would go live", "needs approval": "waits for you", "blocked": "blocked", "held": "held", "dropped": "dropped"}
 
 
@@ -225,7 +230,7 @@ def report_md(site: Site, doc: dict[str, Any]) -> str:
         L += [f"### {a['id']}: {a['type']} on {a['url']}", ""]
         if a.get("query"):
             L.append(f"Query: «{a['query']}»")
-        L += [f"Why: {a['why']}", "", "Evidence: " + "; ".join(a.get("evidence", [])), "", f"Outcome: **{STATUS_LABEL.get(a['final'], a['final'])}**" + (f" ({'; '.join(a['final_reasons'])})" if a.get("final_reasons") else ""), ""]
+        L += [f"Why: {_clip(a['why'], 400)}", "", "Evidence: " + _clip("; ".join(a.get("evidence", [])), 400), "", f"Outcome: **{STATUS_LABEL.get(a['final'], a['final'])}**" + (f" ({_clip('; '.join(a['final_reasons']), 400)})" if a.get("final_reasons") else ""), ""]
         d = a.get("draft")
         if d:
             if d.get("title"):
@@ -233,9 +238,10 @@ def report_md(site: Site, doc: dict[str, Any]) -> str:
             if d.get("description"):
                 L.append(f"- New description: {d['description']}")
             for link in d.get("links", []):
-                L.append(f"- Link from {link['from_url']} to {link['to_url']}, anchor «{link['anchor']}»: {link['sentence']}")
+                L.append(f"- Link to {re.sub(r'^https?://[^/]+', '', link['to_url']) or '/'}, anchor «{link['anchor']}»")
             for e in d.get("text_edits", []):
-                L += [f"- Edit under «{e['section']}»:", f"  - before: {e['before'][:400] or '(new block)'}", f"  - after: {e['after'][:600]}"]
+                kind = "new block" if not e["before"] else "rewrite"
+                L.append(f"- {kind.capitalize()} under «{e['section'][:60]}» ({len(e['after']):,} characters): {_clip(e['after'], 220)}")
             if d.get("schema_jsonld"):
                 L.append("- Structured data: `" + d["schema_jsonld"][:200].replace("`", "'") + ("...`" if len(d["schema_jsonld"]) > 200 else "`"))
             art = d.get("article") or {}
@@ -245,14 +251,16 @@ def report_md(site: Site, doc: dict[str, Any]) -> str:
             if ht.get("steps"):
                 L.append(f"- For {ht.get('who')}, about {ht.get('minutes')} minutes: " + " ".join(f"({i + 1}) {s}" for i, s in enumerate(ht["steps"])))
             mc = a.get("model_check") or {}
-            for k, label in (("language_issues", "Language"), ("overlaps", "Overlaps")):
-                if mc.get(k):
-                    L.append(f"- {label}: " + "; ".join(mc[k][:4]))
+            if mc.get("language_issues"):
+                L.append("- Language: " + "; ".join(_clip(x, 120) for x in mc["language_issues"][:3]))
+            others = [o for o in mc.get("overlaps", []) if a["url"] not in o]
+            if others:
+                L.append("- Overlaps: " + "; ".join(_clip(x, 120) for x in others[:3]))
             cc = a.get("code_check") or {}
             if cc.get("warnings"):
                 L.append("- Warnings: " + "; ".join(cc["warnings"]))
             if d.get("notes"):
-                L.append(f"- Writer's note: {d['notes']}")
+                L.append(f"- Writer's note: {_clip(d['notes'], 300)}")
             L.append("")
     if doc.get("not_doing"):
         L += ["**Not doing:**", ""] + [f"- {n['what']}: {n['why']}" for n in doc["not_doing"]] + [""]

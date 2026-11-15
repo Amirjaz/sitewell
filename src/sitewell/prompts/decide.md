@@ -15,7 +15,7 @@ How to choose:
 4. Never act on a page in guard.json locked_pages.
 5. Every action cites its evidence: the facts.json section and its numbers (query, position, impressions, clicks). "expected" is a calculation from those numbers, such as impressions x (target CTR - current CTR), written out; or "not estimable" with the reason.
 6. "url" is a full URL from inventory.csv. For a new page, the proposed full URL. "query" is the search query the action serves, or "" if none.
-7. "instruction" tells a separate writer exactly what to change and what to keep, in plain English, so the writer can do it from the page alone.
+7. "instruction" tells a separate writer exactly what to change and what to keep, in plain English, so the writer can do it from the page alone. Keep each action small and focused: one section, one missing answer, one set of links. A page that needs a large rewrite is a reason to say so in not_doing, not to rewrite it in one week.
 8. If guard.json says changes are paused, still choose the actions (they will be held) and set pause.recommended to true with the reasons.
 9. Work a person must do (a directory profile, a photo, the doctor's answer) is type "hand-task". At most 3, and only when it clearly matters more than what you can do yourself.
 10. not_doing: the obvious moves you rejected and why (a rule, the 14-day lock, too little evidence, a Google update).

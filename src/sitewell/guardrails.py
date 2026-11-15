@@ -19,6 +19,7 @@ NEW_PAGES_PER_30_DAYS = 2
 MAX_ACTIONS = 5
 MAX_HAND_TASKS = 3
 TITLE_MAX, DESC_MIN, DESC_MAX = 65, 70, 170
+LARGE_EDIT_CHARS = 1_200  # more new text than this on one page waits for a person
 
 # Applied to new text only (a phrase already on the page is not the writer's doing).
 FORBIDDEN = ["بهترین", "برترین", "تضمین", "صد درصد", "۱۰۰ درصد", "100 درصد", "۱۰۰٪", "100%", "معجزه"]
@@ -121,10 +122,17 @@ def after_drafts(actions: list[dict[str, Any]], drafts: list[dict[str, Any]], pa
             pairs.append((d["description"], pack.get("description", "")))
             if not DESC_MIN <= len(d["description"]) <= DESC_MAX:
                 r["warnings"].append(f"description is {len(d['description'])} characters")
+        added = 0
         for e in d.get("text_edits", []):
-            if e.get("before") and _norm(e["before"]) not in _norm(page_text):
+            old, new = _norm(e.get("before", "")), _norm(e.get("after", ""))
+            if old and old not in _norm(page_text):
                 r["problems"].append(f"'before' text not found on the page: {e['before'][:60]}")
+            if old and old not in new:
+                r["approvals"].append(f"rewrites existing text under «{e.get('section', '')[:40]}»")
+            added += max(0, len(new) - len(old))
             pairs.append((e.get("after", ""), e.get("before", "") or page_text))
+        if added > LARGE_EDIT_CHARS:
+            r["approvals"].append(f"large edit: {added:,} characters of new text")
         for link in d.get("links", []):
             if normalise_url(link.get("to_url", "")) not in inventory_urls:
                 r["problems"].append(f"link target is not a page on the site: {link.get('to_url')}")

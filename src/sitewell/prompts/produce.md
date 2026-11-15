@@ -11,7 +11,7 @@ Write one draft per action, with its action_id. Fill only the fields that action
 - title, description: the new text only. Title at most 60 characters and description 120 to 155, unless rules.md says otherwise. Keep the doctor's name and the city where the current text has them.
 - links: from_url (a page in pages/), to_url (a URL in inventory.csv), anchor (the linked words), sentence (the whole sentence as it will read, containing the anchor). Prefer an anchor that already appears on the from page.
 - schema_jsonld: one complete JSON-LD object as a string, consistent with what the page already has.
-- text_edits: section (the heading the text sits under), before (the exact current text, copied verbatim from pages/; empty when adding a new block), after (the new text). Change as little as possible.
+- text_edits: section (the heading the text sits under), before (the exact current text, copied verbatim from pages/; empty when adding a new block), after (the new text). Change as little as possible: at most 2 edits and about 800 characters of new text per action. Prefer adding a short block to rewriting existing sentences, and never reword a medical sentence that is already on the page.
 - article: only for a new page. A full draft in Markdown that answers the query in its first paragraph, uses H2 sections, adds an FAQ if the query invites one, and cites a source for every medical statement. Sources must be real, well-known medical references; if you can't source a statement, leave it out.
 - hand_task: who does it, numbered steps, minutes it takes.
 - notes: what you kept, and anything you could not do and why.

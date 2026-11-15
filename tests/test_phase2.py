@@ -114,7 +114,7 @@ def test_the_shadow_week_sorts_every_action(tmp_path):
     doc = json.loads((folder / "weeks" / "2026-W47" / "shadow" / "decision.json").read_text(encoding="utf-8"))
     final = {a["id"]: (a["final"], a["final_reasons"]) for a in doc["actions"]}
     assert final["a1"] == ("auto", [])
-    assert final["a2"][0] == "needs approval" and "new medical claim" in final["a2"][1][0]
+    assert final["a2"][0] == "needs approval" and any("new medical claim" in r for r in final["a2"][1])
     assert final["a3"] == ("needs approval", ["new pages always wait for approval"])
     assert final["a4"][0] == "dropped" and "changed in the last 14 days" in final["a4"][1][0]
     assert final["a5"] == ("dropped", ["no new-page evidence for this query"])
@@ -198,3 +198,15 @@ def test_importing_old_changes_is_idempotent(tmp_path):
     assert added == 1 and problems == ["line 2: unknown kind 'banana'"]
     assert ledger.load(path)[0].url == "https://clinic.test/ا"
     assert ledger.import_file(path, src)[0] == 0
+
+
+def test_rewording_existing_text_and_large_additions_wait_for_a_person():
+    acts = [dict(action(1, "text-edit", "/a"), status="proposed", reasons=[])]
+    pack = {f"{SITE}/a": {"title": "", "blocks": [{"tag": "p", "text": "درمان الف تنها درمان قطعی است."}]}}
+    reword = empty_draft("a1", text_edits=[{"section": "علت", "before": "درمان الف تنها درمان قطعی است.", "after": "درمان الف یک درمان است."}])
+    r = guardrails.after_drafts(acts, [reword], pack, {f"{SITE}/a"}, [], [])
+    assert r["a1"]["approvals"] == ["rewrites existing text under «علت»"]
+    extend = empty_draft("a1", text_edits=[{"section": "علت", "before": "درمان الف تنها درمان قطعی است.", "after": "درمان الف تنها درمان قطعی است. نوبت بگیرید."}])
+    assert guardrails.after_drafts(acts, [extend], pack, {f"{SITE}/a"}, [], [])["a1"]["approvals"] == []
+    big = empty_draft("a1", text_edits=[{"section": "s", "before": "", "after": "متن " * 400}])
+    assert guardrails.after_drafts(acts, [big], pack, {f"{SITE}/a"}, [], [])["a1"]["approvals"][0].startswith("large edit")
