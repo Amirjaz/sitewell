@@ -3,8 +3,8 @@
 An SEO agent that looks after a site on a schedule. Code measures, Claude decides, and
 only what the rules allow gets shipped.
 
-**Status: early.** Phase 1, the data layer, runs weekly on two real sites. Nothing here
-changes a site yet: the parts that decide and write come next.
+**Status: early.** It runs weekly on two real sites in shadow mode: it measures, decides
+and writes every week, but nothing is shipped yet. Shipping comes next.
 
 ## The idea
 
@@ -91,6 +91,42 @@ One run, safe to repeat:
 It writes `weeks/<ISO week>/facts.json`, `summary.md` and `inventory.csv`. It also adds to
 `history/monthly.csv` and records itself in `runs/`. `sitewell watch` fails when a site has
 no successful weekly run in the last eight days, because schedulers miss runs.
+
+## The weekly shadow run
+
+```bash
+sitewell shadow sites/example --ops-root .
+```
+
+After the data run, Claude decides and writes the week's actions, and plain code decides
+what may happen to them:
+
+1. **Code settles the limits first:**
+   - pages changed in the last 14 days are locked;
+   - at most two new pages a month, and only for a query in the new-page evidence;
+   - changes pause while a Google update is rolling out or the domain is in trouble.
+2. **Claude decides on a strong model,** with the site's `rules.md`, the facts, the page
+   inventory, the link map and the change ledger. It proposes at most five actions, each
+   citing its numbers.
+3. **Code drops what the limits don't allow.**
+4. **Code fetches the current content** of every page involved.
+5. **Claude writes the changes:** new titles and descriptions, links, small text edits,
+   structured data, or a full draft for a new page.
+6. **Code checks every draft:**
+   - forbidden phrases, such as superlatives;
+   - edits whose "before" text isn't on the page;
+   - links to pages that don't exist;
+   - rewording of existing text;
+   - edits over 1,200 characters.
+7. **The smallest model checks** for new medical claims, Persian language problems,
+   overlap with other pages, and the site's rules.
+8. **Every action ends up in one state:** would go live, waits for you, for you to do,
+   blocked, held, dropped, or no change needed.
+
+Each Claude call gets sitewell's short instructions instead of Claude Code's default ones,
+a single tool (Read, inside one workspace folder) and a JSON schema its answer must match.
+It cannot browse, run commands or reach a site. A call costs about 3,000 tokens of
+overhead instead of about 50,000, and every call's tokens and cost are recorded.
 
 ## WordPress
 
